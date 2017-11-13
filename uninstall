@@ -1,5 +1,0 @@
-#!/bin/bash
-echo -n "WARNING!  Are you sure you want to uninstall crew? [y/N]: "; read -n1 UNINSTALL
-if [ "$UNINSTALL" == "y" ]; then
-  sudo dev_install --reinstall -y
-fi
