@@ -1,0 +1,72 @@
+# chromebrew-scripts configuration
+#
+# Copy to ${XDG_CONFIG_HOME:-~/.config}/chromebrew-scripts/config (per user)
+# or /etc/chromebrew-scripts.conf (system wide). Simple KEY=value lines; the
+# file is parsed, never sourced, so no shell syntax is interpreted. Quotes
+# around a value are optional. Unknown keys and invalid values are ignored
+# with a warning. Environment variables with the same names override the
+# files; command line flags override everything. `cbs-check` shows the
+# settings that differ from the defaults and where each came from.
+
+# Where --self-update pulls this toolkit from (https:// only). A git checkout
+# with nothing configured follows the remote it was cloned from; a tree or
+# single-file installation uses the repository below. Set it to follow a
+# fork, for example:
+#SELF_UPDATE_REPO=https://github.com/bradvrudney/chromebrew-scripts
+
+# Branch for --self-update of a git checkout or a tree installation. Empty
+# (default) follows the checkout's current branch if the remote has it,
+# otherwise the remote's default branch. A single-file installation follows
+# the GitHub releases instead and ignores this.
+#SELF_UPDATE_BRANCH=
+
+# Seconds a command may take before it is killed: mount, make_dev_ssd.sh,
+# reboot (default 300). Also --timeout.
+#TIMEOUT=300
+
+# Seconds a crew command or the Chromebrew installer may take (default
+# 3600). crew upgrade and the installer download and compile packages.
+#CREW_TIMEOUT=3600
+
+# Seconds a download may take (default 300).
+#DOWNLOAD_TIMEOUT=300
+
+# The Chromebrew installer that `chromebrew --install` downloads and runs.
+#CREW_INSTALLER_URL=https://raw.githubusercontent.com/chromebrew/chromebrew/master/install.sh
+
+# The Chromebrew prefix (CREW_PREFIX, which Chromebrew itself exports). It
+# is what `chromebrew --remove` clears. Empty: /usr/local.
+#CREW_PREFIX=
+
+# Install anyway when a pre-flight check fails (unsupported release channel,
+# Crostini container, low free space). Also --force and CREW_FORCE_INSTALL=1,
+# which is passed on to the installer; the installer then also installs the
+# build tools.
+#FORCE_INSTALL=0
+
+# Minimum free space on the stateful partition, in MiB, before
+# `chromebrew --install` goes ahead (default 1024).
+#MIN_FREE_MB=1024
+
+# Where `chromebrew --backup` writes the package list when no file is given.
+# Empty: ~/MyFiles/Downloads or ~/Downloads (visible in the Files app, so
+# it can be copied to Google Drive or a USB stick before a powerwash),
+# else ~/.config/chromebrew-scripts/backups.
+#BACKUP_DIR=
+
+# Colour output: auto (TTY only, honours NO_COLOR), always, never.
+#COLOR=auto
+
+# Write a log file for every run (also --no-log / --log FILE). The log has a
+# header describing the run and the device, every message including the
+# ones --quiet hides and the verbose-only commands, and each command's full
+# output, exit status and duration, with timestamps and without colours.
+# Files are 0600 in a 0700 directory.
+#LOGGING=1
+
+# Where logs go (absolute path). Empty: /var/log/chromebrew-scripts when run
+# as root, ${XDG_STATE_HOME:-~/.local/state}/chromebrew-scripts otherwise.
+#LOG_DIR=
+
+# How many logs to keep in LOG_DIR; older ones are deleted. 0 keeps all.
+#LOG_KEEP=20

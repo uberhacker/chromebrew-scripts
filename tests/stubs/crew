@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# crew stub: log the call.
+#   crew version         prints 1.59.0
+#   crew list installed  prints STUB_CREW_INSTALLED (default: gcc_lib,
+#                        python3, vim) one per line, the first one wrapped in
+#                        a colour code the way crew colours its output
+#   crew install NAMES   fails (exit 1, a message on stderr) for a name listed
+#                        in STUB_CREW_INSTALL_FAIL
+# STUB_EXIT_crew=N fails every call with N.
+printf 'crew %s\n' "$*" >> "${STUB_LOG:-/dev/null}"
+[ "${STUB_EXIT_crew:-0}" = 0 ] || exit "${STUB_EXIT_crew}"
+case "${1:-}" in
+  version)
+    echo "1.59.0" ;;
+  list)
+    if [ "${2:-}" = installed ]; then
+      list="${STUB_CREW_INSTALLED-gcc_lib
+python3
+vim}"
+      first=1
+      while IFS= read -r pkg; do
+        [ -n "$pkg" ] || continue
+        if [ "$first" = 1 ]; then
+          printf '\033[1;32m%s\033[0m\n' "$pkg"
+          first=0
+        else
+          printf '%s\n' "$pkg"
+        fi
+      done <<< "$list"
+    fi ;;
+  install)
+    shift
+    for pkg in "$@"; do
+      case " ${STUB_CREW_INSTALL_FAIL:-} " in
+        *" $pkg "*) echo "crew: $pkg: build failed" >&2; exit 1 ;;
+      esac
+    done ;;
+esac
+exit 0

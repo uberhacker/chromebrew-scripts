@@ -1,9 +1,0 @@
-#!/bin/bash
-# References:
-# https://www.chromium.org/chromium-os/poking-around-your-chrome-os-device#TOC-Making-changes-to-the-filesystem
-# https://sites.google.com/site/cr48ite/getting-technical/remove-rootfs-verification-make-read-write
-echo -n "WARNING!  Are you sure you want to remove rootfs verification? [y/N]: "; read -n1 REMOVE
-if [ "$REMOVE" == "y" ]; then
-  sudo /usr/share/vboot/bin/make_dev_ssd.sh --remove_rootfs_verification
-  sudo reboot
-fi

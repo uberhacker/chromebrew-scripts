@@ -1,0 +1,72 @@
+name: Release
+
+# Push a tag (git tag v2.1.0 && git push origin v2.1.0) to publish the
+# single-file build: chromebrew-scripts and chromebrew-scripts.sha256 are
+# attached to a GitHub release, where `--self-update` of a single-file
+# installation and `cbs-check` look for them
+# (releases/latest/download/chromebrew-scripts.sha256).
+#
+# Only the publish job can write to the repository. The tests (which run
+# third-party code: bats-core, pinned to a release commit) run in a
+# read-only job without any token, and the published file is built from a
+# clean checkout in the publish job itself.
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+env:
+  BATS_REPO: https://github.com/bats-core/bats-core.git
+  BATS_COMMIT: eb7f42f8d608ac693d7a4b67474f6714ea68cfc5   # v1.14.0
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install shellcheck
+        run: sudo apt-get update -q && sudo apt-get install -y -q shellcheck
+      - run: tests/lint.sh
+      - name: Fetch bats-core (pinned)
+        run: |
+          git init -q tests/vendor/bats-core
+          git -C tests/vendor/bats-core fetch -q --depth 1 "$BATS_REPO" "$BATS_COMMIT"
+          git -C tests/vendor/bats-core checkout -q FETCH_HEAD
+      - name: Unit tests (modular and single-file builds)
+        run: tests/run.sh
+        env:
+          BATS: ${{ github.workspace }}/tests/vendor/bats-core/bin/bats
+      - name: Check the tag matches VERSION
+        run: |
+          v=$(tr -d '[:space:]' < VERSION)
+          [ "v$v" = "$GITHUB_REF_NAME" ] || { echo "tag $GITHUB_REF_NAME does not match VERSION ($v)"; exit 1; }
+
+  publish:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Build
+        run: |
+          ./build.sh dist/chromebrew-scripts
+          (cd dist && sha256sum chromebrew-scripts > chromebrew-scripts.sha256)
+          dist/chromebrew-scripts --version
+          cat dist/chromebrew-scripts.sha256
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh release create "$GITHUB_REF_NAME"
+          dist/chromebrew-scripts dist/chromebrew-scripts.sha256
+          --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes

@@ -1,0 +1,234 @@
+#!/usr/bin/env bash
+# chromebrew-scripts - Chromebrew and ChromeOS helpers: install, remove,
+# update or inspect Chromebrew and back up its package list (chromebrew),
+# powerwash the device (powerwash), remove rootfs verification (rootfs),
+# remount the filesystem read/write (rw), and check the device (check).
+#
+# The one entry point for every command. Invoked through a symlink named
+# after a command (chromebrew, powerwash, rootfs, rw, cbs-check) it runs that
+# command; invoked as chromebrew-scripts it takes the command as its first
+# argument. It resolves its own location through symlinks, loads the modules
+# from ../lib and runs the command. Requires bash 4.4 or newer.
+#
+# A modular rewrite of Ed Reel's chromebrew-scripts
+# (https://github.com/uberhacker/chromebrew-scripts). LGPL-3.0, see LICENSE.
+
+set -uo pipefail
+
+if [ -z "${BASH_VERSINFO:-}" ] || [ "${BASH_VERSINFO[0]}" -lt 4 ] ||
+   { [ "${BASH_VERSINFO[0]}" -eq 4 ] && [ "${BASH_VERSINFO[1]}" -lt 4 ]; }; then
+  echo "chromebrew-scripts needs bash 4.4 or newer (found ${BASH_VERSION:-unknown})" >&2
+  exit 1
+fi
+
+# The core relies on a few external commands (coreutils, grep, sed); say
+# which one is missing up front instead of failing inside a step.
+for _cbs_cmd in mktemp readlink grep sed sort; do
+  if ! command -v "$_cbs_cmd" >/dev/null 2>&1; then
+    echo "chromebrew-scripts needs '$_cbs_cmd' on PATH (GNU coreutils, grep and sed are required)" >&2
+    exit 1
+  fi
+done
+unset _cbs_cmd
+
+# cbs_resolve_self: absolute path of this file, following symlinks.
+cbs_resolve_self() {
+  local src="${BASH_SOURCE[0]}" dir
+  while [ -L "$src" ]; do
+    dir=$(cd -P "$(dirname "$src")" && pwd)
+    src=$(readlink "$src")
+    [[ "$src" != /* ]] && src="$dir/$src"
+  done
+  printf '%s/%s\n' "$(cd -P "$(dirname "$src")" && pwd)" "$(basename "$src")"
+}
+# CBS_BIN is this program's real path. CBS_ROOT_DIR is the tree it was loaded
+# from: the directory above bin/, or for a single-file build the directory
+# holding the file. CBS_BUNDLED is a build constant, not a setting: build.sh
+# rewrites the next line to CBS_BUNDLED=1.
+CBS_BUNDLED=0
+CBS_BIN=$(cbs_resolve_self)
+if [ "$CBS_BUNDLED" = 1 ]; then
+  CBS_ROOT_DIR=$(dirname "$CBS_BIN")
+else
+  CBS_ROOT_DIR=$(cd -P "$(dirname "$CBS_BIN")/.." && pwd)
+fi
+export CBS_ROOT_DIR
+CBS_COMMANDS=(chromebrew powerwash rootfs rw check)
+
+# Modules. build.sh replaces everything between the two markers with the
+# modules' contents to make the single-file build.
+# @@BUNDLE-MODULES-BEGIN@@
+# shellcheck source=lib/core/log.sh
+source "$CBS_ROOT_DIR/lib/core/log.sh"
+# shellcheck source=lib/core/util.sh
+source "$CBS_ROOT_DIR/lib/core/util.sh"
+# shellcheck source=lib/core/config.sh
+source "$CBS_ROOT_DIR/lib/core/config.sh"
+# shellcheck source=lib/core/args.sh
+source "$CBS_ROOT_DIR/lib/core/args.sh"
+# shellcheck source=lib/core/chromeos.sh
+source "$CBS_ROOT_DIR/lib/core/chromeos.sh"
+# shellcheck source=lib/core/crew.sh
+source "$CBS_ROOT_DIR/lib/core/crew.sh"
+# shellcheck source=lib/core/runner.sh
+source "$CBS_ROOT_DIR/lib/core/runner.sh"
+# shellcheck source=lib/core/runlog.sh
+source "$CBS_ROOT_DIR/lib/core/runlog.sh"
+# shellcheck source=lib/core/selfupdate.sh
+source "$CBS_ROOT_DIR/lib/core/selfupdate.sh"
+# shellcheck source=lib/cmd/chromebrew.sh
+source "$CBS_ROOT_DIR/lib/cmd/chromebrew.sh"
+# shellcheck source=lib/cmd/powerwash.sh
+source "$CBS_ROOT_DIR/lib/cmd/powerwash.sh"
+# shellcheck source=lib/cmd/rootfs.sh
+source "$CBS_ROOT_DIR/lib/cmd/rootfs.sh"
+# shellcheck source=lib/cmd/rw.sh
+source "$CBS_ROOT_DIR/lib/cmd/rw.sh"
+# shellcheck source=lib/cmd/check.sh
+source "$CBS_ROOT_DIR/lib/cmd/check.sh"
+# @@BUNDLE-MODULES-END@@
+
+# version_string: "chromebrew-scripts X.Y.Z (git abcdef1)"
+version_string() {
+  local v commit=""
+  if [ "$CBS_BUNDLED" = 1 ]; then
+    printf 'chromebrew-scripts %s (git %s, single file)\n' "${CBS_BUNDLE_VERSION:-unknown}" "${CBS_BUNDLE_COMMIT:-unknown}"
+    return 0
+  fi
+  v=$(tr -d '[:space:]' < "$CBS_ROOT_DIR/VERSION" 2>/dev/null || echo unknown)
+  if [ -e "$CBS_ROOT_DIR/.git" ] && has_cmd git; then
+    commit=$(git -C "$CBS_ROOT_DIR" rev-parse --short HEAD 2>/dev/null || true)
+  fi
+  printf 'chromebrew-scripts %s%s\n' "$v" "${commit:+ (git $commit)}"
+}
+
+# command_from_name NAME: the command a program or symlink name stands for.
+command_from_name() {
+  local c
+  case "$1" in
+    cbs-check) echo check; return 0 ;;
+  esac
+  for c in "${CBS_COMMANDS[@]}"; do
+    if [ "$1" = "$c" ]; then echo "$c"; return 0; fi
+  done
+  return 1
+}
+
+usage_toolkit() {
+  cat <<EOF
+Usage: chromebrew-scripts COMMAND [options]
+       chromebrew-scripts --self-update [--dry-run] [--source URL]
+       chromebrew-scripts --completion bash | --version | --help
+
+Chromebrew and ChromeOS helpers. Commands:
+  chromebrew   install, remove, update or inspect Chromebrew; back up and
+               restore its package list (--backup / --restore)
+  powerwash    reset the device to factory settings
+  rootfs       remove rootfs verification
+  rw           mount the root filesystem read/write (--undo: read-only again)
+  check        read-only report: release, channel, developer mode, rootfs
+               verification, mounts, free space, Chromebrew, toolkit version
+
+Installed as symlinks named after the commands (chromebrew, powerwash,
+rootfs, rw, cbs-check) this file runs that command directly.
+"chromebrew-scripts COMMAND --help" shows a command's options.
+
+EOF
+  args_common_usage
+}
+
+# usage_for: the help text for the current command, or the toolkit's.
+usage_for() {
+  if [ -n "$CBS_CMD" ]; then "cmd_${CBS_CMD}_usage"; else usage_toolkit; fi
+}
+
+# completion_main SHELL: print the completion script (--completion bash).
+# A single-file build carries it as cbs_completion_script (added by build.sh).
+completion_main() {
+  case "$1" in
+    bash|zsh) ;;
+    *) echo "chromebrew-scripts: --completion supports bash (zsh can load it with bashcompinit)" >&2; return 2 ;;
+  esac
+  if declare -F cbs_completion_script >/dev/null; then
+    cbs_completion_script
+  else
+    cat -- "$CBS_ROOT_DIR/completions/chromebrew-scripts.bash"
+  fi
+}
+
+main() {
+  local rc=0 argv0 cmd=""
+
+  user_init
+  # The command: from the name this was invoked as, else the first argument.
+  argv0=$(basename -- "$0")
+  cmd=$(command_from_name "$argv0") || cmd=""
+  if [ -z "$cmd" ] && [ $# -gt 0 ]; then
+    if cmd=$(command_from_name "$1"); then shift; else cmd=""; fi
+  fi
+  CBS_CMD="$cmd"
+
+  if ! args_parse "$@"; then
+    log_plain ""
+    usage_for >&2
+    exit 2
+  fi
+  if [ "$CBS_ARG_HELP" = 1 ]; then usage_for; exit 0; fi
+  if [ "$CBS_ARG_VERSION" = 1 ]; then version_string; exit 0; fi
+  if [ -n "$CBS_ARG_COMPLETION" ]; then completion_main "$CBS_ARG_COMPLETION"; exit $?; fi
+
+  [ -n "$CBS_CONFIG_FILE" ] && [[ "$CBS_CONFIG_FILE" != /* ]] && CBS_CONFIG_FILE="$PWD/$CBS_CONFIG_FILE"
+  [ -n "$CBS_LOG_PATH" ] && [[ "$CBS_LOG_PATH" != /* ]] && CBS_LOG_PATH="$PWD/$CBS_LOG_PATH"
+  config_load
+  args_apply || exit 2
+  chromeos_detect
+
+  if [ "$CBS_ARG_SELF_UPDATE" = 1 ]; then
+    if [ ${#CBS_CMD_ARGS[@]} -gt 0 ]; then
+      log_error "unexpected argument: ${CBS_CMD_ARGS[0]}"
+      exit 2
+    fi
+    [ "$CBS_QUIET" = 1 ] && exec >/dev/null 2>&1
+    runlog_open self-update "$@"
+    selfupdate_main || rc=1
+    [ -n "$CBS_LOG_FILE" ] && log_plain "  log: $CBS_LOG_FILE"
+    runlog_close "$rc"
+    exit "$rc"
+  fi
+
+  if [ -z "$cmd" ]; then
+    if [ ${#CBS_CMD_ARGS[@]} -gt 0 ]; then
+      log_error "unknown command: ${CBS_CMD_ARGS[0]}"
+      log_plain ""
+      usage_toolkit >&2
+      exit 2
+    fi
+    usage_toolkit
+    exit 0
+  fi
+
+  # The command parses its own arguments before anything is logged, so a
+  # usage error leaves no log behind.
+  if ! "cmd_${cmd}_parse" ${CBS_CMD_ARGS[@]+"${CBS_CMD_ARGS[@]}"}; then
+    log_plain ""
+    "cmd_${cmd}_usage" >&2
+    exit 2
+  fi
+
+  # --quiet hides third-party output (it is still in the run log). Our own
+  # lines go to the console descriptor CBS_OUT and are unaffected.
+  [ "$CBS_QUIET" = 1 ] && exec >/dev/null 2>&1
+  runlog_open "$argv0" "$@"
+  log_plain "${C_BOLD}$(version_string)${C_RESET} on $(chromeos_describe)"
+  if [ "$CBS_DRY_RUN" = 1 ]; then
+    log_plain "${C_MAGENTA}dry run: nothing will be changed${C_RESET}"
+  fi
+
+  "cmd_${cmd}_run" || rc=1
+  summary_print || rc=1
+  [ -n "$CBS_LOG_FILE" ] && log_plain "  log: $CBS_LOG_FILE"
+  runlog_close "$rc"
+  exit "$rc"
+}
+
+main "$@"

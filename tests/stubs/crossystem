@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# crossystem stub: log the call; answer a flag from STUB_CROSSYSTEM_<flag>
+# (default 1). STUB_EXIT_crossystem=N makes it fail with N.
+printf 'crossystem %s\n' "$*" >> "${STUB_LOG:-/dev/null}"
+[ "${STUB_EXIT_crossystem:-0}" = 0 ] || exit "${STUB_EXIT_crossystem}"
+var="STUB_CROSSYSTEM_${1//[^A-Za-z0-9]/_}"
+printf '%s\n' "${!var-1}"

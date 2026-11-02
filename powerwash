@@ -1,7 +1,0 @@
-#!/bin/bash
-# Reference: https://neverware.zendesk.com/hc/en-us/articles/115000765287--Powerwash-via-the-cmd-line
-echo -n "WARNING!  Are you sure you want to reset to factory settings? [y/N]: "; read -n1 CLOBBER
-if [ "$CLOBBER" == "y" ]; then
-  echo clobber | sudo tee /mnt/stateful_partition/.update_available
-  sudo reboot
-fi

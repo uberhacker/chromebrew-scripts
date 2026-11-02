@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# curl stub: log the call and write a fake download to the -o target.
+#   file:// URLs copy the file (exit 22 when it is missing, like curl -f).
+#   *.tar.gz URLs get a tarball of this repository, or of STUB_TARBALL_DIR.
+#   Anything else gets a fake Chromebrew installer that logs how it was run
+#   (euid, the first byte of stdin, CREW_FORCE_INSTALL, its arguments) and
+#   exits with STUB_INSTALLER_EXIT.
+# STUB_EXIT_curl=N fails the call with N and writes nothing.
+printf 'curl %s\n' "$*" >> "${STUB_LOG:-/dev/null}"
+out=''
+url=''
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -o) out="$2"; shift ;;
+    -D|-H|-K|--proto|--proto-redir|--retry|--connect-timeout|--max-time) shift ;;
+    -*) ;;
+    *) url="$1" ;;
+  esac
+  shift
+done
+[ "${STUB_EXIT_curl:-0}" = 0 ] || exit "${STUB_EXIT_curl}"
+[ -n "$out" ] || exit 0
+case "$url" in
+  file://*)
+    src="${url#file://}"
+    [ -f "$src" ] || exit 22
+    cp -- "$src" "$out" ;;
+  *.tar.gz)
+    dir="${STUB_TARBALL_DIR:-$REPO_ROOT}"
+    tar -czf "$out" -C "$(dirname "$dir")" --exclude=.git --exclude=dist --exclude=tests/vendor "$(basename "$dir")" ;;
+  *)
+    cat > "$out" <<'INSTALLER'
+#!/usr/bin/env bash
+read -r -n1 answer || answer=''
+printf 'installer euid=%s answer=%s force=%s args=%s\n' "$EUID" "$answer" "${CREW_FORCE_INSTALL:-}" "$*" >> "${STUB_LOG:-/dev/null}"
+exit "${STUB_INSTALLER_EXIT:-0}"
+INSTALLER
+    ;;
+esac

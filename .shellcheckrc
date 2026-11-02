@@ -1,0 +1,6 @@
+# shellcheck configuration for chromebrew-scripts
+shell=bash
+external-sources=true
+source-path=SCRIPTDIR
+source-path=SCRIPTDIR/..
+source-path=SCRIPTDIR/../..

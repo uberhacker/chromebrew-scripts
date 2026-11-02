@@ -1,8 +1,0 @@
-#!/bin/bash
-# Reference: https://sites.google.com/site/cr48ite/getting-technical/remove-rootfs-verification-make-read-write
-echo -n "WARNING!  Are you sure you want to mount the filesystem read/write? [y/N]: "; read -n1 RW
-if [ "$RW" == "y" ]; then
-  echo
-  echo "Setting the filesystem to mount read/write..."
-  sudo mount -o remount,rw / && sudo mount -o remount,exec /mnt/stateful_partition && sudo mount -i -o remount,exec /home/chronos/user && echo "You should now have full read/write access." || echo "There were no filesystem changes."
-fi
